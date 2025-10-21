@@ -1,0 +1,8 @@
+pyserial>=3.5
+mido>=1.2.10
+python-rtmidi>=1.4.9
+requests>=2.25.0
+rich>=13.0.0
+keyboard>=1.13.0
+pyqtgraph>=0.13.0
+PyQt5>=5.15.0
