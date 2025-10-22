@@ -1060,6 +1060,7 @@ class ArduinoStereoMidiPlayer(QThread):
         self.visualizer = None
         self.stereo_mode = stereo_mode
         self.bass_threshold = bass_threshold
+        self.loop_enabled = False  # Loop single song
         # Track active notes for pitch bend
         self.active_notes = {0: None, 1: None}  # channel: (midi_note, start_time)
         self.pitch_bend_range = 2  # Default pitch bend range in semitones
@@ -1079,6 +1080,10 @@ class ArduinoStereoMidiPlayer(QThread):
     def set_bass_threshold(self, threshold):
         """Set bass threshold"""
         self.bass_threshold = threshold
+    
+    def set_loop(self, enabled):
+        """Enable/disable looping"""
+        self.loop_enabled = enabled
         
     def play(self):
         """Start playing"""
@@ -1094,7 +1099,7 @@ class ArduinoStereoMidiPlayer(QThread):
         self.status_update.emit("Playback stopped")
         
     def run(self):
-        """Play MIDI file using stereo logic"""
+        """Play MIDI file using stereo logic with optional looping"""
         if not self.current_file:
             return
             
@@ -1104,8 +1109,21 @@ class ArduinoStereoMidiPlayer(QThread):
             self.status_update.emit(f"Error loading MIDI file: {e}")
             return
         
-        # Use the stereo player logic
-        self._play_stereo_once(midi_file, self.tempo_multiplier, self.stereo_mode, self.bass_threshold)
+        # Loop the song if enabled
+        while self.playing:
+            self._play_stereo_once(midi_file, self.tempo_multiplier, self.stereo_mode, self.bass_threshold)
+            
+            # If loop is disabled or playback was stopped, exit
+            if not self.loop_enabled or not self.playing:
+                break
+            
+            # Small pause between loops
+            if self.playing:
+                time.sleep(0.5)
+        
+        # Clean up after playback ends
+        self.playing = False
+        self.progress_update.emit(0)
     
     def _play_stereo_once(self, midi_file, tempo_multiplier, stereo_mode, bass_threshold):
         """Play MIDI file once with stereo processing - from stereo_midi_player.py"""
@@ -1182,8 +1200,8 @@ class ArduinoStereoMidiPlayer(QThread):
             progress = int((i / len(stereo_notes)) * 100)
             self.progress_update.emit(progress)
         
-        self.playing = False
-        self.progress_update.emit(0)
+        # Reset progress (but don't set playing=False, let the run() method handle that)
+        self.progress_update.emit(0 if not self.loop_enabled else 100)
         
     def play_note_on_channel(self, midi_note, duration_ms, channel, velocity=100):
         """Play a MIDI note on specific channel with velocity"""
@@ -1762,6 +1780,11 @@ class ArduinoSynthGUI(QMainWindow):
         playback_buttons.addWidget(self.stop_btn)
         midi_layout.addLayout(playback_buttons)
         
+        # Loop checkbox
+        self.loop_checkbox = QCheckBox("Loop Song")
+        self.loop_checkbox.stateChanged.connect(self.toggle_loop)
+        midi_layout.addWidget(self.loop_checkbox)
+        
         # Tempo control
         midi_layout.addWidget(QLabel("Tempo:"))
         self.tempo_slider = QSlider(Qt.Horizontal)
@@ -2210,6 +2233,12 @@ class ArduinoSynthGUI(QMainWindow):
         """Update bass threshold"""
         self.midi_player.set_bass_threshold(threshold)
         self.update_status(f"Bass threshold: {threshold}")
+    
+    def toggle_loop(self, state):
+        """Toggle song looping"""
+        enabled = state == Qt.Checked
+        self.midi_player.set_loop(enabled)
+        self.update_status(f"Loop: {'Enabled' if enabled else 'Disabled'}")
     
     def update_volume(self, value):
         """Update volume on Arduino"""
